@@ -1,0 +1,139 @@
+10/15 - Nick and Sabah had trouble exiting the boot loop because debug.sh wasn't being seen by make, fixed that with Aashna's help on piazza and got it all working!
+10/16 - Nick: wrote implementation of IDT setup, but got a bunch of errors when I tried to compile about problems with references
+10/17 - Nick: - in OH, determined trying to #include files in my asm linkage file caused a lot of errors. Removing it solved the problem
+              - divide by zero test seems to do nothing, checking setup of idt descriptors
+              - changing idt setup (in for loop)  from 0111 to 1111 caused the system to boot loop, so I'm assuming it was correct before
+              - changed it back and the system is still boot looping
+              - calling my divide error test causes the system to boot loop, seems like an error with my implementation
+              - I was missing the part where I set idt[i].present = to 1, which turns them on. Setting them to present fixed the bug
+
+
+10/19 - Kris:  	wrote and implemented rtc, but the interrupt was never called despite initializing it correctly. 
+		- Fixed by uncommenting "sti()" on line 162 in kernel.c
+
+10/18 - Sabah and Aarushi:
+	      - While working on the page enabling, we were modifying cr0 before cr4 which was causing a boot loop
+	      - Setting all the table entries to not present meant that we were not getting the video mem when we did info mem
+	      - After adding an if clause to take care the issue still persisted, because we were comparing index to VIDEO without shifting
+	      - Had i starting at 0 for the second for loop to go through the pagedir and setting it all to 0, but that meant we ignored the two page sizes and that the first and second pagedir should pe present in memory.
+	      - 
+
+10/23 - Kris: Everytime iret is called to return out from linkage.S, a General Protection Exception is raised
+		- Fixed, the "size" attribute in the idt for the interrupts were set to 0 instead of 1
+
+10/24 - Kris: rtc interrupt is only raised once
+		- EOI function had (0x60 | 0x4) when sending the EOI to the master, it should have been (0x60 | 2)
+	  - Nick:
+	    - entire screen cycles through ascii characters on boot. Checked out what was casuing it, seems to be rtc_init
+		- seems like there was a test function that was getting called on every rtc interrupt
+		- upon first test of read_directory and filesys_open(), system page faults
+		- fixed page fault in read_dentry_by_name, now getting page fault in read_dentry_by_index! progress! (this is 3 hours into debugging)
+		- it seems like the dentry_t pointer I was copying my info into is NULL and I get a page fault when trying to access its memory.
+		- for now, creating a dentry_t in filesys.h (not just a pointer) put it in memory that was accessible and didn't result in a page fault. For CP3 we will probably have to move that into a syscall
+		  file where the 8 open file dentries are stored.
+		- with that not throwing an error anymore, I am able to emulate functionality somewhat like the given ls
+
+
+10/25 - Kris: Caps lock always resets screen_x to 1
+		- the array I use to store if a function is being pressed down was not large enough to support the index for caps lock
+		- caused interference when setting the caps_locked state
+	  - Nick: another page fault! This time in implementing read_file
+	  	- first culprit to examine: the file type. It's giving a junk value, probably for the same reason open
+		- turns out the junk value is just because filesys_close didn't reset the dentry that I was using so it still had the entry for '.'
+		- my name matching isn't working on names that aren't '.'
+		- I realized I could use strncmp() with n = 32 to match files even if they weren't null terminated, so now my read_dentry_by_name works all the time
+		- however, the test I wrote doesn't print anything. Going to debug and step through my read_file to see what's going on
+		- For some reason, my inode pointer in read_data that actually finds the data blocks ends up pointing to an inode with index 4 times what's expected.
+		- When I change 4096 to 1024, my inodeptr points to a non empty inode, but I still get page fault error
+		- It seems that my db_ptr never correctly points to the data blocks. Just realized it's because I forgot to skip over all the inodes, and was treating the db number like a pointer to the db
+		- now cat just prints a bunch of f's to the screen, which I'll consider progress
+		- I was forgetting to increment the data block pointer
+		- My pointer arithmetic is all messed up because it works differently depending on the size of the struct it points to. Going to standardize all of that\
+		- I discovered through gdb that my number_inodes in the boot block struct is recorded as 0, which ruins my pointers to the data blocks
+		- the bootblock setup fell prey to the same pointer arithmetic issue! Now I get some random characters but also ELF when I try to read ca
+		- I was terminating my file read on null bytes, which was incorrect. I re-worked my file_read function and now I have a page fault exception (the page fault exception was from using puts
+		  instead of putc)
+
+10/25 - Sabah and Aarushi:
+		- After virtualizing, RTC interrupts were too quick because the flag was not being reset to 0 each time an interrupt was recieved
+
+11/8  - Nick:
+		- getting a lot of "multiple definitions" errors for my fops tables. I think there's an issue with my header files or my includes?
+		- solved by separating declaration and definition (doing definition in entry now)
+		- got a page fault while setting up the pcb. that got fixed because our PHYS_8MB constant was wrong 
+		- now get a page fault when trying to set up the empty fda for each pcb. That was because we were trying to dereference curr_pcb which was by default 0 and hadn't been set yet
+		- no more page faults! but we said shell is not an executable even though it is. This was due to a typo in our ELF check that accidentally marked all executables as not executables
+		- the problem is in read_data. I changed the file system functions to make read_data more flexible and accidentally broke it - it doesn't access data blocks correctly anymore
+		- rewriting sections of read_data in effort to restore functionality
+		- got read_data working, had an issue with paging because the user space page was being set incorrectly, but we changed the shift to access page directory and it worked
+		- to properly read large files, I have to use actual read() and open() syscalls in the execute syscall
+		- my read_file handles reading over multiple data blocks and is currently bugged.
+		- switching the order that we pushed the iret stack in the wrong order. back to page faults
+		- had to change the user space stack address from 132MB to 132MB - 4B
+		- set up new_kernel_stack correctly so all kernel stack addresses were valid memory. Still page faulting on the inline asm though. 
+		- the way we were getting the eip, our eip variable actually held the pointer to the right eip, not the actual eip
+		- that fixed it! it doesn't throw errors anymore. It doesn't execute executables either but it works (ish)
+		- we don't return the proper number of bytes read from stdin for read, so shell never reads arguments
+		- page fault when I try to run ls. let's debug!
+		- parseCmd wasn't exiting because it never hit newline or space. added functionality so parseCmd checks for null terminator
+		- our halt is broken. It causes a page fault exception after you return out of it and then try to iret from the original syscall
+		- the mystery of the broken iret in halt thickens. we examined the stack before iret and it looks like it should work but it page faults
+11/9 - Aarushi:
+		- pages were being set to the incorrect physical memory location which was causing a page fault
+11/14 - Nick:
+		- rtc is causing page faults. I have no clue why, but there are just random page faults sometimes that never happen if we don't init the rtc. Re-examining the interrupt handling
+		- changed system call to interrupt gate and put sti() in the places that we need it stopped the page faults
+		- cat stopping printing after a newline char was due to an extraneous case in terminal_puts that handled newlines before we correctly implemented the terminal buffer
+		- now everything works as expected, but sometimes calls will randomly return nonzero values (program terminated abnormally)
+		- sysHalt now returns the status it gets passed in, but that value is literally never correct. Even when the program should return an error, it prints the error AND the program terminated abnormally
+		- we still have program terminated abnormally when rtc is off
+		- we even have it when we force halt to return 0. so the stack is getting corrupted somehow (or at least, eax is getting clobbered)
+11/15 - Sabah and Aarushi:
+		- page table was being declared locally rather than allocated in memory which was causing a pagefault
+		- page table was not being recognized during compile because it was not declared as .globl
+		- video memory was not being assigned with the correct offset which was causing a pagefault
+		- page within page table that was pointing to video memory was not marked present which was causing a pagefault
+11/16 - Nick:
+		- changing retval to a file scope variable and updating it when a program halts fixed the program terminated abnormally
+
+12/3 - Kris: typing stopped being output to the terminal
+		- When adding support for multiple keyboard buffers, I missed one of the variables that kept track of 
+		the index into each of the keyboard buffers. It needed the index variable I added.
+
+12/4 - Kris: infinite loop of page fault exceptions when PIT is initialized. It triple faults after running for a bit
+		- idt for hardware interrupts had their present attribute set to 0, which triggered
+		a segment not found fault when generating a PIT interrupt. Once set to 1, the PIT worked
+		flawlessly. This was later changed to specifically setting the present value for the pit's irq
+		to be 1 and leaving the other unused irq's to 0.
+12/5 - Nick:
+	   - we get like. a ton of page faults. Definitely getting triggered by PIT interrupts. Which means it's something in our scheduler() function, because that is basically
+	   what the PIT handler is.
+	   - taking a new approach - first we're going to implement multiple terminals, and then we will implement scheduling. Using a terminal struct and an array to keep track 
+	   of everything.
+	   - we have successfully implemented multiple terminals! only some minor issues remain
+
+12/5 - kris: spamming the termswitch causes page fault
+		- after sending eoi and enabling interrupts before leaving the kb handler to switch the terminal, this no longer occurred
+	 - Nick: 
+	   - after switching terminals, interrupts were suppressed. This was fixed by sending eoi on irq1 before switching terminals
+	   - if you have hello running on one terminal, switch away and then back, and finish hello, it page faults. This is likely due to issues with the kernel stack being moved
+	   but we haven't pinpointed what part of the code is causing the problem.
+	   - the system no longer catches when there are no more processes, and also doesn't go back to processes after you tab away from them - switching away from a terminal seems
+	   to halt the process but not free the pcb
+	   - there is. a lot of unexpected behaviors. Executing a process in a terminal didn't remap the top_pid variable used to track what was running. This may explain always returning
+	   to base shell
+		- exit when there are no processes available = bootloops. We now check to see if the terminal has been run at least once, if it has, then we allow it to launch and use the reserved processes.
+
+12/6 - Aarushi, Kris, Nick, Sabah: when calling cat largefile.tx, program searches for a file called 'cat largefile.tx' instead of 'largefile.tx'
+		- the curname that was being compared to largefile.tx had a wierd ending (\002). Changing the way we compared the entered string and this filename that fixed this issue
+	
+12/6 - kris: prints '391OS>' twice when pressing enter during fish program
+		- when enter is released, we change the variable that keeps track of when enter is pressed to indicate that is isn't pressed.
+
+12/6 - kris, nick: when pingpong is running, if "grep --" is done in another terminal, pinpong runs really slow
+		- rtc frequency is reset when changing terminals
+
+12/6 - kris, aarushi, nick, sabah: running a command with 125 spaces before it would fail abnormally
+		- restricting the buffer to 121 characters fixes it
+
+

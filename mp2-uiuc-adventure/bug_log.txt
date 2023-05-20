@@ -1,0 +1,77 @@
+--------------------------------------------------------CHECKPOINT 1-----------------------------------------------------------
+
+1) when moving right or left, the image displays whatever was on the opposite side of the image instead of the rest of the image
+2) when moving right or left, the image has diagonal artifacts 
+1+2 FIXED because...
+I had "(*vert_line_fn) (show_y, x, buf);" instead of "(*vert_line_fn) (x, show_y, buf);"
+
+3) when moving right or left, the image has virtical black bars every other pixel
+3 FIXED because...
+I had "p_off = (3 - (show_x & 3));" instead of "p_off = (3 - (x & 3));"
+
+4) can't see full image
+4 FIXED because...
+had to change the displayed y dimension from 200 to 182.
+
+5) scroll bar mirrors top part of image
+6) flashing 
+5+6 FIXED because...
+I set "target_img = STATUS_BAR_SIZE;" in set_mode_x
+
+7) black bars instead of solid color
+7 FIXED because...
+I added "SET_WRITE_MASK (0x0F00);" to write to all four planes at once
+
+8) when I write to the buffer, it overwrites 8 horizonal bits at once
+8 FIXED because...
+I changed SET_WRITE_MASK to (1 << (i + 8)); and called copy_status_bar_image 4 times, one for each plane
+
+9) cannot write consecutive pixels next to each other
+9 FIXED because...
+the memory layout of the buffer is not a simply x + 320*y, 
+instead it was "SCROLL_X_WIDTH*(vertcalOffset+rowLength*(col % NUM_PLANES)+row)+col/NUM_PLANES + characterOffset*k + horizontalOffset"
+
+10) strange artifacts at the ends of words
+10 FIXED because...
+used strcpy instead of adding the characters index by index
+
+11) double draw of the first character being typed
+11 FIXED because...
+I had an issue within the loop I used to draw the characters. The index used
+to choose the next character to draw was messed up, often outside the
+length of the string.
+
+--------------------------------------------------------CHECKPOINT 2-----------------------------------------------------------
+
+12) LEDs won't light up
+12 FIXED because...
+When I restarted the tux, it started working
+
+13) tux LEDs don't clear
+13 FIXED becuase...
+I need to update all the leds every time and send the hex mapping 0x0 for leds that are off
+
+14) input commands keep repeating (instead of stopping until the cmd changes)
+14 FIXED because...
+I put everything in the while loop in get_command(). Once I took it all out, it stopped going crazy
+
+15) some of the buttons activated the incorrect command when pressed
+15 FIXED because...
+My mapping in get_command was incorrect.
+
+
+16) buttons lag a lot. When arrows are pressed, goes ALL the way to the edge
+16 FIXED because...
+forgot to reset button_pressed after processing the button
+
+17) when keyboard is used from the terminal, double entries to status bar are recorded and arrow keys pan the 
+room as well as display A, B, C, D on the status bar. INS, HOME, and PAGE UP display numbers and change rooms
+17 FIXED becuase...
+I commented out the compiler directive #if, #else, #endif. This caused two pieces of code to handle characters
+typed into the kernel, and the one in incput.c always displays them on the status bar. 
+
+
+
+
+
+

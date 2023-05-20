@@ -1,0 +1,28 @@
+# All object files
+*.o
+
+# IDE files
+/.idea
+/.vscode
+
+# OS
+.DS_Store
+
+# executables
+adventure
+tr
+mp2object
+mp2photo
+input
+
+# Misc
+*.swp
+
+# driver files
+*.cmd
+*.symvers
+*.ko
+*.mod.c
+.tmp_versions
+
+
